@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<font-family xmlns:android="http://schemas.android.com/apk/res/android">
+    <font
+        android:fontStyle="normal"
+        android:fontWeight="300"
+        android:font="@font/fkgroteskneuetrial_light_bf6576818c0f3e8" />
+    <font
+        android:fontStyle="normal"
+        android:fontWeight="400"
+        android:font="@font/fkgroteskneuetrial_regular_bf6576818c3af74" />
+    <font
+        android:fontStyle="normal"
+        android:fontWeight="500"
+        android:font="@font/fkgroteskneuetrial_medium_bf6576818c3a00a" />
+    <font
+        android:fontStyle="normal"
+        android:fontWeight="700"
+        android:font="@font/fkgroteskneuetrial_bold_bf6576818bd3700" />
+</font-family>
