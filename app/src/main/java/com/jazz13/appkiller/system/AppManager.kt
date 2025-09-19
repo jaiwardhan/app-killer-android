@@ -173,28 +173,50 @@ class AppManager(private val context: Context) {
     }
     
     private fun getRunningAppPackages(): Set<String> {
-        return if (permissionManager.hasUsageStatsPermission()) {
+        // Try ActivityManager first (real-time)
+        val activityManagerResult = getRunningAppsFromActivityManager()
+        
+        return if (activityManagerResult != null) {
+            // ActivityManager found sufficient apps
+            activityManagerResult
+        } else if (permissionManager.hasUsageStatsPermission()) {
+            // Fallback to UsageStats
             getRunningAppsFromUsageStats()
         } else {
-            getRunningAppsFromActivityManager()
+            // No permission, return empty set
+            emptySet()
         }
     }
     
     private fun getRunningAppsFromUsageStats(): Set<String> {
         val currentTime = System.currentTimeMillis()
+        val detectionWindow = com.jazz13.appkiller.settings.AppSettings.RUNNING_APP_DETECTION_WINDOW_MS
+        
         val stats = usageStatsManager.queryUsageStats(
             UsageStatsManager.INTERVAL_BEST,
-            currentTime - 60000, // Last 1 minute
+            currentTime - detectionWindow,
             currentTime
         )
-        
-        return stats?.filter { it.lastTimeUsed > currentTime - 60000 }
+        return stats?.filter { it.lastTimeUsed > currentTime - detectionWindow }
             ?.map { it.packageName }
             ?.toSet() ?: emptySet()
     }
     
-    private fun getRunningAppsFromActivityManager(): Set<String> {
-        return activityManager.runningAppProcesses?.map { it.processName }?.toSet() ?: emptySet()
+    private fun getRunningAppsFromActivityManager(): Set<String>? {
+        val runningApps = mutableSetOf<String>()
+        
+        // Get running processes
+        activityManager.runningAppProcesses?.forEach { process ->
+            // Only include foreground and visible apps
+            if (process.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE) {
+                // Extract main package name (before any ":" separator)
+                val packageName = process.processName.split(":")[0]
+                runningApps.add(packageName)
+            }
+        }
+        
+        // Return null if insufficient apps found (less than 3)
+        return if (runningApps.size >= 3) runningApps else null
     }
     
     fun hasUsageStatsPermission(): Boolean = permissionManager.hasUsageStatsPermission()

@@ -10,6 +10,7 @@ import com.jazz13.appkiller.settings.AppSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 class MainViewModel(
     private val repository: AppRepository,
@@ -39,6 +40,20 @@ class MainViewModel(
     init {
         // Truncate logs on app startup
         settings.truncateLogs()
+        
+        // Start auto-refresh timer
+        startAutoRefresh()
+    }
+    
+    private fun startAutoRefresh() {
+        viewModelScope.launch {
+            while (true) {
+                delay(com.jazz13.appkiller.settings.AppSettings.AUTO_REFRESH_INTERVAL_MS)
+                if (!_isLoading.value) { // Only refresh if not already loading
+                    loadApps()
+                }
+            }
+        }
     }
     
     fun loadApps() {
