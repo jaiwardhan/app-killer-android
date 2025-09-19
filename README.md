@@ -2,6 +2,8 @@
 
 A powerful Android application for managing and terminating running apps with comprehensive logging capabilities.
 
+> Vibe coded. Obviously.
+
 ## 🚀 Features
 
 - **Dual Kill Modes**: Auto (programmatic) and Manual (Android settings)
@@ -151,12 +153,6 @@ const val SPLASH_DURATION_MS = 2000L
 ## 📄 License
 
 This project is developed for educational and utility purposes. Please ensure compliance with your local laws and device manufacturer policies when using app termination features.
-
-## 👨‍💻 Credits
-
-**Designed by @jaiwardhan**
-
-Built with modern Android development practices using Kotlin and Jetpack Compose.
 
 ---
 
