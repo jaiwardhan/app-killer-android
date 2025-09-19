@@ -44,71 +44,83 @@ class AppManager(private val context: Context) {
             .sortedBy { it.appName }
     }
     
-    fun killApp(packageName: String): Boolean {
-        return try {
-            // Don't kill our own app
-            if (packageName == context.packageName) {
-                return false
-            }
-            
-            var success = false
-            
-            // Method 1: Kill background processes
-            activityManager.killBackgroundProcesses(packageName)
-            success = true
-            
-            // Method 2: Use shell command to force stop (most effective)
+    private fun getRunningAppPackages(): Set<String> {
+        val runningApps = mutableSetOf<String>()
+        
+        // Primary method: UsageStats (most reliable on modern Android)
+        if (permissionManager.hasUsageStatsPermission()) {
+            runningApps.addAll(getActiveAppsFromUsageStats())
+        }
+        
+        // Secondary: Recent tasks for foreground/minimized apps
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             try {
-                val process = Runtime.getRuntime().exec("am force-stop $packageName")
-                process.waitFor()
-                success = true
+                activityManager.appTasks.forEach { task ->
+                    task.taskInfo.baseActivity?.packageName?.let { packageName ->
+                        runningApps.add(packageName)
+                    }
+                }
+            } catch (e: Exception) {
+                // Continue if can't access app tasks
+            }
+        }
+        
+        // Fallback: Running processes (limited on modern Android)
+        activityManager.runningAppProcesses?.forEach { process ->
+            val packageName = process.processName.split(":")[0]
+            runningApps.add(packageName)
+        }
+        
+        return runningApps
+    }
+    
+    private fun getActiveAppsFromUsageStats(): Set<String> {
+        val currentTime = System.currentTimeMillis()
+        val recentWindow = 30000L // 30 seconds
+        
+        return try {
+            val stats = usageStatsManager.queryUsageStats(
+                UsageStatsManager.INTERVAL_BEST,
+                currentTime - recentWindow,
+                currentTime
+            )
+            
+            stats?.filter { 
+                it.lastTimeUsed > currentTime - recentWindow || 
+                it.lastTimeVisible > currentTime - recentWindow
+            }?.map { it.packageName }?.toSet() ?: emptySet()
+        } catch (e: Exception) {
+            emptySet()
+        }
+    }
+    
+    fun killApp(packageName: String): Boolean {
+        if (packageName == context.packageName) return false
+        
+        return try {
+            activityManager.killBackgroundProcesses(packageName)
+            
+            try {
+                Runtime.getRuntime().exec("am force-stop $packageName").waitFor()
             } catch (e: Exception) {
                 // Continue with other methods
             }
             
-            // Method 3: Kill all processes with the package name
-            try {
-                val runningProcesses = activityManager.runningAppProcesses
-                runningProcesses?.forEach { processInfo ->
-                    if (processInfo.processName.startsWith(packageName)) {
-                        android.os.Process.killProcess(processInfo.pid)
-                        success = true
-                    }
+            activityManager.runningAppProcesses?.forEach { process ->
+                if (process.processName.startsWith(packageName)) {
+                    android.os.Process.killProcess(process.pid)
                 }
-            } catch (e: Exception) {
-                // Continue
             }
             
-            // Method 4: Remove from recent tasks (Android 5.0+)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                try {
-                    val recentTasks = activityManager.appTasks
-                    recentTasks.forEach { task ->
-                        try {
-                            val taskInfo = task.taskInfo
-                            if (taskInfo.baseActivity?.packageName == packageName) {
-                                task.finishAndRemoveTask()
-                                success = true
-                            }
-                        } catch (e: Exception) {
-                            // Continue with other tasks
-                        }
+                activityManager.appTasks.forEach { task ->
+                    if (task.taskInfo.baseActivity?.packageName == packageName) {
+                        task.finishAndRemoveTask()
                     }
-                } catch (e: Exception) {
-                    // Continue
                 }
             }
             
-            // Method 5: Send KILL signal using shell (requires root but try anyway)
-            try {
-                val process = Runtime.getRuntime().exec("pkill -f $packageName")
-                process.waitFor()
-                success = true
-            } catch (e: Exception) {
-                // Ignore
-            }
-            
-            success
+            true
         } catch (e: Exception) {
             false
         }
@@ -128,32 +140,18 @@ class AppManager(private val context: Context) {
     
     private fun getHighDensityIcon(appInfo: ApplicationInfo): Drawable {
         return try {
-            // Try to get high-density icon
             val resources = packageManager.getResourcesForApplication(appInfo)
             val iconId = appInfo.icon
             
             if (iconId != 0) {
-                // Try to get the highest density icon available
-                val drawable = resources.getDrawableForDensity(
-                    iconId, 
-                    DisplayMetrics.DENSITY_XXXHIGH, // 640dpi
-                    null
-                ) ?: resources.getDrawableForDensity(
-                    iconId,
-                    DisplayMetrics.DENSITY_XXHIGH, // 480dpi  
-                    null
-                ) ?: resources.getDrawableForDensity(
-                    iconId,
-                    DisplayMetrics.DENSITY_XHIGH, // 320dpi
-                    null
-                ) ?: packageManager.getApplicationIcon(appInfo)
-                
-                drawable
+                resources.getDrawableForDensity(iconId, DisplayMetrics.DENSITY_XXXHIGH, null)
+                    ?: resources.getDrawableForDensity(iconId, DisplayMetrics.DENSITY_XXHIGH, null)
+                    ?: resources.getDrawableForDensity(iconId, DisplayMetrics.DENSITY_XHIGH, null)
+                    ?: packageManager.getApplicationIcon(appInfo)
             } else {
                 packageManager.getApplicationIcon(appInfo)
             }
         } catch (e: Exception) {
-            // Fallback to default icon loading
             packageManager.getApplicationIcon(appInfo)
         }
     }
@@ -170,53 +168,6 @@ class AppManager(private val context: Context) {
             putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, 
                 "Enable device admin to allow AppKiller to force stop applications")
         }
-    }
-    
-    private fun getRunningAppPackages(): Set<String> {
-        // Try ActivityManager first (real-time)
-        val activityManagerResult = getRunningAppsFromActivityManager()
-        
-        return if (activityManagerResult != null) {
-            // ActivityManager found sufficient apps
-            activityManagerResult
-        } else if (permissionManager.hasUsageStatsPermission()) {
-            // Fallback to UsageStats
-            getRunningAppsFromUsageStats()
-        } else {
-            // No permission, return empty set
-            emptySet()
-        }
-    }
-    
-    private fun getRunningAppsFromUsageStats(): Set<String> {
-        val currentTime = System.currentTimeMillis()
-        val detectionWindow = com.jazz13.appkiller.settings.AppSettings.RUNNING_APP_DETECTION_WINDOW_MS
-        
-        val stats = usageStatsManager.queryUsageStats(
-            UsageStatsManager.INTERVAL_BEST,
-            currentTime - detectionWindow,
-            currentTime
-        )
-        return stats?.filter { it.lastTimeUsed > currentTime - detectionWindow }
-            ?.map { it.packageName }
-            ?.toSet() ?: emptySet()
-    }
-    
-    private fun getRunningAppsFromActivityManager(): Set<String>? {
-        val runningApps = mutableSetOf<String>()
-        
-        // Get running processes
-        activityManager.runningAppProcesses?.forEach { process ->
-            // Only include foreground and visible apps
-            if (process.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE) {
-                // Extract main package name (before any ":" separator)
-                val packageName = process.processName.split(":")[0]
-                runningApps.add(packageName)
-            }
-        }
-        
-        // Return null if insufficient apps found (less than 3)
-        return if (runningApps.size >= 3) runningApps else null
     }
     
     fun hasUsageStatsPermission(): Boolean = permissionManager.hasUsageStatsPermission()

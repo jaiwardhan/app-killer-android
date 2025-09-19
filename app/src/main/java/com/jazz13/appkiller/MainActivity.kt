@@ -16,6 +16,7 @@ import androidx.compose.material.SwipeToDismiss
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.rememberDismissState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -71,24 +72,37 @@ fun AppKillerApp() {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 return MainViewModel(
                     AppRepository(context),
-                    com.jazz13.appkiller.settings.AppSettings(context)
+                    com.jazz13.appkiller.settings.AppSettings(context),
+                    com.jazz13.appkiller.system.SystemMonitor(context)
                 ) as T
             }
         }
     )
     
     val showLogScreen by viewModel.showLogScreen.collectAsState()
+    val showSystemStats by viewModel.showSystemStats.collectAsState()
     val killLogs by viewModel.killLogs.collectAsState()
+    val systemStatsHistory by viewModel.systemStatsHistory.collectAsState()
     
     MaterialTheme(colorScheme = darkColors) {
-        if (showLogScreen) {
-            com.jazz13.appkiller.ui.LogScreen(
-                logs = killLogs,
-                fontFamily = fkGroteskNeue,
-                onBackClick = { viewModel.hideLogScreen() }
-            )
-        } else {
-            AppListScreen(fontFamily = fkGroteskNeue, viewModel = viewModel)
+        when {
+            showLogScreen -> {
+                com.jazz13.appkiller.ui.LogScreen(
+                    logs = killLogs,
+                    fontFamily = fkGroteskNeue,
+                    onBackClick = { viewModel.hideLogScreen() }
+                )
+            }
+            showSystemStats -> {
+                com.jazz13.appkiller.ui.SystemStatsScreen(
+                    statsHistory = systemStatsHistory,
+                    fontFamily = fkGroteskNeue,
+                    onBackClick = { viewModel.hideSystemStats() }
+                )
+            }
+            else -> {
+                AppListScreen(fontFamily = fkGroteskNeue, viewModel = viewModel)
+            }
         }
     }
 }
@@ -107,6 +121,7 @@ fun AppListScreen(fontFamily: FontFamily, viewModel: MainViewModel) {
     
     LaunchedEffect(Unit) {
         viewModel.loadApps()
+        viewModel.startStatsCollection()
     }
     
     Column(
@@ -132,6 +147,15 @@ fun AppListScreen(fontFamily: FontFamily, viewModel: MainViewModel) {
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // System stats icon
+                IconButton(onClick = { viewModel.showSystemStats() }) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "System Statistics",
+                        tint = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+                
                 // Log icon
                 IconButton(onClick = { viewModel.showLogScreen() }) {
                     Icon(

@@ -6,7 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.jazz13.appkiller.data.AppInfo
 import com.jazz13.appkiller.data.AppRepository
 import com.jazz13.appkiller.data.KillLog
+import com.jazz13.appkiller.data.SystemStats
+import com.jazz13.appkiller.data.SystemStatsHistory
 import com.jazz13.appkiller.settings.AppSettings
+import com.jazz13.appkiller.system.SystemMonitor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -14,7 +17,8 @@ import kotlinx.coroutines.delay
 
 class MainViewModel(
     private val repository: AppRepository,
-    private val settings: AppSettings
+    private val settings: AppSettings,
+    private val systemMonitor: SystemMonitor
 ) : ViewModel() {
     private val _apps = MutableStateFlow<List<AppInfo>>(emptyList())
     val apps: StateFlow<List<AppInfo>> = _apps
@@ -36,6 +40,12 @@ class MainViewModel(
     
     private val _killLogs = MutableStateFlow<List<KillLog>>(emptyList())
     val killLogs: StateFlow<List<KillLog>> = _killLogs
+    
+    private val _showSystemStats = MutableStateFlow(false)
+    val showSystemStats: StateFlow<Boolean> = _showSystemStats
+    
+    private val _systemStatsHistory = MutableStateFlow(SystemStatsHistory(emptyList(), emptyList()))
+    val systemStatsHistory: StateFlow<SystemStatsHistory> = _systemStatsHistory
     
     init {
         // Truncate logs on app startup
@@ -105,6 +115,37 @@ class MainViewModel(
         _showLogScreen.value = false
     }
     
+    fun showSystemStats() {
+        viewModelScope.launch {
+            // Load initial 30-minute data
+            updateSystemStatsHistory()
+            _showSystemStats.value = true
+            
+            // Watch for new data every 30 seconds
+            while (_showSystemStats.value) {
+                delay(30000)
+                if (_showSystemStats.value) {
+                    updateSystemStatsHistory()
+                }
+            }
+        }
+    }
+    
+    private fun updateSystemStatsHistory() {
+        val recentStats = systemMonitor.getRecentStats(30)
+        val memoryData = recentStats.map { it.timestamp to it.memoryUsagePercent }
+        val cpuData = recentStats.map { it.timestamp to it.cpuUsagePercent }
+        _systemStatsHistory.value = SystemStatsHistory(memoryData, cpuData)
+    }
+    
+    fun hideSystemStats() {
+        _showSystemStats.value = false
+    }
+    
+    fun startStatsCollection() {
+        systemMonitor.startStatsCollection()
+    }
+    
     fun getUsagePermissionIntent(): Intent = repository.getUsageStatsPermissionIntent()
     
     fun getDeviceAdminIntent(): Intent = repository.getDeviceAdminPermissionIntent()
@@ -117,5 +158,10 @@ class MainViewModel(
     fun onDeviceAdminGranted() {
         _needsDeviceAdmin.value = false
         loadApps()
+    }
+    
+    override fun onCleared() {
+        super.onCleared()
+        systemMonitor.stopStatsCollection()
     }
 }

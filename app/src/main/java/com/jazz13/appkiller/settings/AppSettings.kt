@@ -37,6 +37,8 @@ class AppSettings(context: Context) {
         const val SPLASH_DURATION_MS = 2000L  // 2 seconds
         const val RUNNING_APP_DETECTION_WINDOW_MS = 30000L  // 30 seconds (much shorter)
         const val AUTO_REFRESH_INTERVAL_MS = 30000L  // 30 seconds
+        const val SYSTEM_STATS_UPDATE_INTERVAL_MS = 10000L  // 10 seconds
+        const val SYSTEM_STATS_HISTORY_DURATION_MS = 600000L  // 10 minutes
     }
     
     var killBehavior: Int
